@@ -329,13 +329,60 @@ td{padding:8px 12px;white-space:nowrap;border-right:1px solid var(--border);vert
 let PLAYERS = [];
 let _initDone = false;
 
-fetch('players.json')
+// ── CSV loader ──────────────────────────────────────
+const CSV_FILE = 'players.csv';
+
+const SKIP_COLS = new Set([
+  'Statistic','Shooting','Passing','Pass Types',
+  'Goal and Shot Creation','Defense','Possession',
+  'Miscellaneous Stats','Advanced Goalkeeping'
+]);
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = splitCSVLine(lines[0]);
+  const useCols = headers.map((h,i) => SKIP_COLS.has(h.trim()) ? -1 : i).filter(i => i >= 0);
+  const cleanHeaders = useCols.map(i => headers[i].trim());
+  const records = [];
+  for (let r = 1; r < lines.length; r++) {
+    if (!lines[r].trim()) continue;
+    const cells = splitCSVLine(lines[r]);
+    const obj = {};
+    useCols.forEach((ci, idx) => {
+      const h = cleanHeaders[idx];
+      const raw = (cells[ci] || '').trim();
+      if (raw === '' || raw === 'N/A' || raw === 'null') { obj[h] = null; }
+      else {
+        const n = parseFloat(raw);
+        obj[h] = isNaN(n) ? raw : Math.round(n * 100) / 100;
+      }
+    });
+    records.push(obj);
+  }
+  return records;
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += ch; }
+  }
+  result.push(cur);
+  return result;
+}
+
+fetch(CSV_FILE)
   .then(r => {
-    if (!r.ok) throw new Error('Could not load players.json');
-    return r.json();
+    if (!r.ok) throw new Error('Could not load ' + CSV_FILE);
+    return r.text();
   })
-  .then(data => {
-    PLAYERS = data;
+  .then(text => {
+    PLAYERS = parseCSV(text);
     document.getElementById('hTotal').textContent = PLAYERS.length;
     initSquads();
     populateRoles();
@@ -345,7 +392,7 @@ fetch('players.json')
   .catch(err => {
     document.getElementById('tbody').innerHTML =
       '<tr><td colspan="20"><div class="empty"><div class="empty-icon">⚠️</div>' +
-      '<div class="empty-txt">Could not load players.json — ' + err.message + '</div></div></td></tr>';
+      '<div class="empty-txt">Could not load ' + CSV_FILE + ' — ' + err.message + '</div></div></td></tr>';
   });
 
 // ════════════════════════════════════════════════════
